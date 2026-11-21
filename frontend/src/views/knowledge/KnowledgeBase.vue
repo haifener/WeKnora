@@ -788,6 +788,21 @@ const hasFolders = computed(() => (folderTree.value?.folders?.length ?? 0) > 0);
 // The folder column only earns its space once the knowledge base actually has
 // folders, so knowledge bases filled with single-file uploads look unchanged.
 const showFolderTree = computed(() => !isFAQ.value && hasFolders.value);
+// Documents in the selected folder plus every descendant folder, matching the
+// folder tree's per-row totals; null until the tree has loaded.
+const selectedFolderSubtreeTotal = computed<number | null>(() => {
+  const tree = folderTree.value;
+  if (!tree) return null;
+  const path = selectedFolderPath.value;
+  if (path === ROOT_FOLDER_PATH) return tree.total_document_count;
+  const stack = [...(tree.folders || [])];
+  while (stack.length) {
+    const node = stack.pop()!;
+    if (node.path === path) return node.total_count;
+    if (node.children?.length) stack.push(...node.children);
+  }
+  return null;
+});
 // Browsing lists one folder's own contents; filtering searches its whole
 // subtree. There is no mode switch: the list follows what the user is doing.
 const isFiltering = computed(() =>
@@ -2367,7 +2382,12 @@ const handleKBEditorSuccess = (kbIdValue: string) => {
                     <span v-if="index === folderBreadcrumbs.length - 1" class="doc-folder-path__crumb is-current" :title="crumb.name" aria-current="page">{{ crumb.name }}</span>
                     <button v-else type="button" class="doc-folder-path__crumb" :title="crumb.name" @click="handleFolderSelect(crumb.path)">{{ crumb.name }}</button>
                   </template>
-                  <span v-if="!docListLoading" class="doc-folder-path__count">{{ $t(isFiltering ? 'knowledgeBase.folderTree.filteredCount' : 'knowledgeBase.documentCount', { count: total }) }}</span>
+                  <span v-if="!docListLoading && !isFiltering && selectedFolderSubtreeTotal !== null && selectedFolderSubtreeTotal > total"
+                    class="doc-folder-path__count">
+                    {{ $t('knowledgeBase.folderTree.subtreeCount', { count: selectedFolderSubtreeTotal }) }}
+                    <span class="doc-folder-path__direct">{{ $t('knowledgeBase.folderTree.directCount', { count: total }) }}</span>
+                  </span>
+                  <span v-else-if="!docListLoading" class="doc-folder-path__count">{{ $t(isFiltering ? 'knowledgeBase.folderTree.filteredCount' : 'knowledgeBase.documentCount', { count: total }) }}</span>
                   <t-tooltip v-if="showFolderTree && isFiltering" :content="$t('knowledgeBase.folderTree.searchingSubtree')">
                     <t-icon name="info-circle" class="doc-folder-path__sep" />
                   </t-tooltip>
@@ -2587,7 +2607,9 @@ const handleKBEditorSuccess = (kbIdValue: string) => {
                     <p v-if="hasFolders || selectedFolderPath || isFiltering" class="doc-empty-folder">
                       {{ isFiltering
                         ? $t('knowledgeBase.folderTree.emptySearch')
-                        : $t('knowledgeBase.folderTree.emptyFolder') }}
+                        : (selectedFolderSubtreeTotal ?? 0) > 0
+                          ? $t('knowledgeBase.folderTree.emptyFolderWithSubfolders', { count: selectedFolderSubtreeTotal })
+                          : $t('knowledgeBase.folderTree.emptyFolder') }}
                     </p>
                     <EmptyKnowledge v-else />
                   </div>
@@ -2836,6 +2858,7 @@ const handleKBEditorSuccess = (kbIdValue: string) => {
     &.is-current { color: var(--td-text-color-primary); font-weight: 600; cursor: default; }
   }
   &__count { padding: 6px 0; line-height: 20px; margin-left: 6px; color: var(--td-text-color-placeholder); font-size: var(--app-text-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  &__direct { margin-left: 8px; font-size: var(--app-text-xs); color: var(--td-text-color-placeholder); }
   &__sep, &__scope { align-self: center; flex-shrink: 0; color: var(--td-text-color-placeholder); font-size: var(--app-text-sm); }
 }
 .doc-filter-toggle {
